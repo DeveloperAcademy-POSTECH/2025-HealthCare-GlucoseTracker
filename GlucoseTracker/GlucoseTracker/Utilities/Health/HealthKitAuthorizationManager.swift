@@ -59,63 +59,8 @@ class HealthKitAuthorizationManager: ObservableObject {
     func showSettingsAlert() {
         showingSettingsAlert = true
     }
-    
-    func openAppSettings() {
-        guard let settingsUrl = URL(string: UIApplication.openSettingsURLString) else {
-            return
-        }
-        
-        if UIApplication.shared.canOpenURL(settingsUrl) {
-            UIApplication.shared.open(settingsUrl)
-        }
-    }
 }
 
-enum HealthKitAuthorizationStatus {
-    case notDetermined
-    case authorized
-    case denied
-    case unavailable
-    
-    init(from hkStatus: HKAuthorizationStatus) {
-        switch hkStatus {
-        case .notDetermined:
-            self = .notDetermined
-        case .sharingAuthorized:
-            self = .authorized
-        case .sharingDenied:
-            self = .denied
-        @unknown default:
-            self = .notDetermined
-        }
-    }
-    
-    var title: String {
-        switch self {
-        case .notDetermined:
-            return "Permission Required"
-        case .authorized:
-            return "Authorized"
-        case .denied:
-            return "Permission Denied"
-        case .unavailable:
-            return "HealthKit Unavailable"
-        }
-    }
-    
-    var message: String {
-        switch self {
-        case .notDetermined:
-            return "This app needs access to HealthKit to read and write blood glucose data."
-        case .authorized:
-            return "HealthKit access is granted."
-        case .denied:
-            return "HealthKit access is required for this app to function properly. Please enable it in Settings."
-        case .unavailable:
-            return "HealthKit is not available on this device."
-        }
-    }
-}
 
 struct HealthKitAuthorizationModifier: ViewModifier {
     @StateObject private var authManager = HealthKitAuthorizationManager()
@@ -124,17 +69,15 @@ struct HealthKitAuthorizationModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .environmentObject(authManager)
-            .onAppear {
+            .task {
                 authManager.checkAuthorizationStatus()
                 
                 if authManager.isAuthorized {
                     onAuthorized()
                 } else if authManager.needsAuthorization {
-                    Task {
-                        await authManager.requestAuthorization()
-                        if authManager.isAuthorized {
-                            onAuthorized()
-                        }
+                    await authManager.requestAuthorization()
+                    if authManager.isAuthorized {
+                        onAuthorized()
                     }
                 }
             }
@@ -150,14 +93,6 @@ struct HealthKitAuthorizationModifier: ViewModifier {
                 Button("Cancel", role: .cancel) { }
             } message: {
                 Text(authManager.authorizationStatus.message)
-            }
-            .alert("Open Settings", isPresented: $authManager.showingSettingsAlert) {
-                Button("Settings") {
-                    authManager.openAppSettings()
-                }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("Please enable HealthKit access in Settings → Privacy & Security → Health → GlucoseTracker")
             }
     }
 }
@@ -249,12 +184,6 @@ struct PermissionDeniedView: View {
             }
             
             VStack(spacing: 12) {
-                Button("Open Settings") {
-                    authManager.openAppSettings()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                
                 Button("Try Again") {
                     authManager.checkAuthorizationStatus()
                 }
