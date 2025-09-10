@@ -61,10 +61,10 @@ struct TestView: View {
             }
             
             HStack {
-//                Text("Authorization Status")
-//                Spacer()
-//                Text(mockManager.getAuthorizationStatus().statusName)
-//                    .foregroundColor(mockManager.getAuthorizationStatus() == .sharingAuthorized ? .green : .orange)
+                Text("Data Coverage")
+                Spacer()
+                Text(dataCoverageText)
+                    .foregroundColor(.secondary)
             }
             
             HStack {
@@ -73,6 +73,18 @@ struct TestView: View {
                 Text(mockManager.isHealthKitAvailable() ? "Yes" : "No")
                     .foregroundColor(mockManager.isHealthKitAvailable() ? .green : .red)
             }
+        }
+    }
+    
+    private var dataCoverageText: String {
+        if sampleCount == 0 {
+            return "No Data"
+        } else if sampleCount < 50 {
+            return "Sparse"
+        } else if sampleCount < 120 {
+            return "Moderate"
+        } else {
+            return "Rich (60 days)"
         }
     }
     
@@ -107,14 +119,14 @@ struct TestView: View {
     }
     
     private var scenarioDataSection: some View {
-        Section("Generate Test Data") {
-            Button("Normal Pattern (14 days)") {
+        Section("Generate Test Data (60 Days)") {
+            Button("Normal Pattern") {
                 Task {
                     isLoading = true
                     do {
                         try await mockManager.generateMockDataForTesting(scenario: .normal)
                         await refreshData()
-                        showAlert("Generated normal pattern data with 3 readings per day")
+                        showAlert("Generated normal pattern data: ~180 readings over 60 days (3 per day)")
                     } catch {
                         showAlert("Failed to generate data: \(error.localizedDescription)")
                     }
@@ -123,13 +135,13 @@ struct TestView: View {
             }
             .disabled(isLoading)
             
-            Button("High Variability (14 days)") {
+            Button("High Variability") {
                 Task {
                     isLoading = true
                     do {
                         try await mockManager.generateMockDataForTesting(scenario: .highVariability)
                         await refreshData()
-                        showAlert("Generated high variability data (70-180 mg/dL range)")
+                        showAlert("Generated high variability data over 60 days (70-180 mg/dL range)")
                     } catch {
                         showAlert("Failed to generate data: \(error.localizedDescription)")
                     }
@@ -138,13 +150,13 @@ struct TestView: View {
             }
             .disabled(isLoading)
             
-            Button("Trending Up (14 days)") {
+            Button("Trending Up") {
                 Task {
                     isLoading = true
                     do {
                         try await mockManager.generateMockDataForTesting(scenario: .trendingUp)
                         await refreshData()
-                        showAlert("Generated upward trending data")
+                        showAlert("Generated gradual upward trend over 60 days")
                     } catch {
                         showAlert("Failed to generate data: \(error.localizedDescription)")
                     }
@@ -153,13 +165,13 @@ struct TestView: View {
             }
             .disabled(isLoading)
             
-            Button("Trending Down (14 days)") {
+            Button("Trending Down") {
                 Task {
                     isLoading = true
                     do {
                         try await mockManager.generateMockDataForTesting(scenario: .trendingDown)
                         await refreshData()
-                        showAlert("Generated downward trending data")
+                        showAlert("Generated gradual downward trend over 60 days")
                     } catch {
                         showAlert("Failed to generate data: \(error.localizedDescription)")
                     }
@@ -168,13 +180,13 @@ struct TestView: View {
             }
             .disabled(isLoading)
             
-            Button("Sparse Data (5 readings)") {
+            Button("Sparse Data") {
                 Task {
                     isLoading = true
                     do {
                         try await mockManager.generateMockDataForTesting(scenario: .sparseData)
                         await refreshData()
-                        showAlert("Generated sparse data with gaps")
+                        showAlert("Generated sparse data: ~20 readings with gaps over 60 days")
                     } catch {
                         showAlert("Failed to generate data: \(error.localizedDescription)")
                     }
@@ -257,13 +269,13 @@ struct TestView: View {
     
     private var managementSection: some View {
         Section("Data Management") {
-            Button("Clear All Data (Last 30 Days)") {
+            Button("Clear All Data (Last 60 Days)") {
                 Task {
                     isLoading = true
                     do {
                         try await mockManager.clearMockSamples()
                         await refreshData()
-                        showAlert("All data from last 30 days cleared!")
+                        showAlert("All data from last 60 days cleared!")
                     } catch {
                         showAlert("Failed to clear data: \(error.localizedDescription)")
                     }
@@ -305,12 +317,30 @@ struct TestView: View {
             .foregroundColor(.blue)
             .disabled(isLoading)
             
-            Button("Simulate Request Failures") {
-                mockManager.setShouldFailRequests(true)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                    mockManager.setShouldFailRequests(false)
+            Button("Generate Last Month Data") {
+                Task {
+                    isLoading = true
+                    do {
+                        try await generateLastMonthData()
+                        await refreshData()
+                        showAlert("Generated realistic data for the past 30 days")
+                    } catch {
+                        showAlert("Failed to generate month data: \(error.localizedDescription)")
+                    }
+                    isLoading = false
                 }
-                showAlert("Requests will fail for the next 5 seconds")
+            }
+            .foregroundColor(.blue)
+            .disabled(isLoading)
+            
+            Button("Simulate Request Failures") {
+                Task { @MainActor in
+                    mockManager.setShouldFailRequests(true)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                        mockManager.setShouldFailRequests(false)
+                    }
+                    showAlert("Requests will fail for the next 5 seconds")
+                }
             }
             .foregroundColor(.orange)
         }
@@ -325,8 +355,8 @@ struct TestView: View {
         isLoading = true
         do {
             let count = try await mockManager.getMockSamplesCount()
-            let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
-            let samples = try await mockManager.readBloodGlucoseSamples(since: thirtyDaysAgo)
+            let sixtyDaysAgo = Calendar.current.date(byAdding: .day, value: -60, to: Date()) ?? Date()
+            let samples = try await mockManager.readBloodGlucoseSamples(since: sixtyDaysAgo)
             
             await MainActor.run {
                 sampleCount = count
@@ -413,16 +443,38 @@ struct TestView: View {
         }
     }
     
+    private func generateLastMonthData() async throws {
+        let calendar = Calendar.current
+        let today = Date()
+        
+        for day in 1...30 {
+            guard let baseDate = calendar.date(byAdding: .day, value: -day, to: today) else { continue }
+            
+            let readingsPerDay = Int.random(in: 1...4)
+            let hours = [7, 13, 19, 21]
+            
+            for i in 0..<readingsPerDay {
+                let hour = hours[i % hours.count]
+                let minute = Int.random(in: 0...59)
+                
+                guard let date = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: baseDate) else { continue }
+                
+                let value = generateRealisticValue(for: hour)
+                try await mockManager.addMockSample(value: value, date: date)
+            }
+        }
+    }
+    
     private func generateRealisticValue(for hour: Int) -> Double {
         switch hour {
         case 6...9:
-            return Double.random(in: 80...100)
+            return Double.random(in: 80...100)    // 공복혈당
         case 12...14:
-            return Double.random(in: 110...140)
+            return Double.random(in: 110...140)   // 점심 후
         case 18...20:
-            return Double.random(in: 100...130)
+            return Double.random(in: 100...130)   // 저녁 후
         default:
-            return Double.random(in: 90...120)
+            return Double.random(in: 90...120)    // 기타 시간
         }
     }
     
