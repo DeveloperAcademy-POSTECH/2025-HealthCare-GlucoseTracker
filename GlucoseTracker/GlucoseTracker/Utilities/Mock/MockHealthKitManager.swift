@@ -171,7 +171,15 @@ class MockHealthKitManager: HealthKitManagerProtocol, ObservableObject {
             throw HealthKitError.dataSaveFailed("Blood glucose value must be greater than 0")
         }
         
-        guard date <= Date() else {
+        // 미래 날짜 체크를 더 관대하게 수정 (1분 여유)
+        let now = Date()
+        let allowedFutureDate = now.addingTimeInterval(60) // 1분 여유
+        
+        guard date <= allowedFutureDate else {
+            print("❌ Date validation failed:")
+            print("   Trying to save date: \(date)")
+            print("   Current time: \(now)")
+            print("   Difference: \(date.timeIntervalSince(now)) seconds")
             throw HealthKitError.dataSaveFailed("Cannot save data for future dates")
         }
         
@@ -185,7 +193,9 @@ class MockHealthKitManager: HealthKitManagerProtocol, ObservableObject {
         
         do {
             try await healthStore.save(sample)
+            print("✅ Successfully saved sample: \(value) mg/dL at \(date)")
         } catch {
+            print("❌ Failed to save sample: \(error)")
             throw HealthKitError.dataSaveFailed(error.localizedDescription)
         }
     }
@@ -251,13 +261,19 @@ class MockHealthKitManager: HealthKitManagerProtocol, ObservableObject {
     }
 }
 
+// MARK: - Mock Data Generation Extensions
+
 extension MockHealthKitManager {
     func setAuthorizationStatus(_ status: HKAuthorizationStatus) {
-        authorizationStatus = status
+        Task { @MainActor in
+            authorizationStatus = status
+        }
     }
     
     func setShouldFailRequests(_ shouldFail: Bool) {
-        shouldFailRequests = shouldFail
+        Task { @MainActor in
+            shouldFailRequests = shouldFail
+        }
     }
     
     func addMockSample(value: Double, date: Date) async throws {
@@ -266,8 +282,11 @@ extension MockHealthKitManager {
     }
     
     func clearMockSamples() async throws {
-        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
-        let samples = try await readBloodGlucoseSamples(since: thirtyDaysAgo)
+        // 60일 치 데이터를 생성하므로 정리할 때도 더 긴 기간 확인
+        let sixtyDaysAgo = Calendar.current.date(byAdding: .day, value: -60, to: Date()) ?? Date()
+        let samples = try await readBloodGlucoseSamples(since: sixtyDaysAgo)
+        
+        print("🗑️ Clearing \(samples.count) existing samples...")
         
         for sample in samples {
             try await deleteBloodGlucoseSample(sample)
@@ -275,8 +294,9 @@ extension MockHealthKitManager {
     }
     
     func getMockSamplesCount() async throws -> Int {
-        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
-        let samples = try await readBloodGlucoseSamples(since: thirtyDaysAgo)
+        // 60일 치 샘플 개수 확인
+        let sixtyDaysAgo = Calendar.current.date(byAdding: .day, value: -60, to: Date()) ?? Date()
+        let samples = try await readBloodGlucoseSamples(since: sixtyDaysAgo)
         return samples.count
     }
     
@@ -299,38 +319,69 @@ extension MockHealthKitManager {
         }
     }
     
-    private func generateNormalMockData() async throws {
+    // MARK: - Safe Date Creation Helper
+    
+    private func createSafeDate(daysAgo: Int, hour: Int, minute: Int = 0) -> Date? {
         let calendar = Calendar.current
         let now = Date()
+        
+        // 더 안전한 날짜 생성 방법
+        guard let baseDate = calendar.date(byAdding: .day, value: -daysAgo, to: now) else {
+            return nil
+        }
+        
+        // 날짜의 시작으로 설정
+        let startOfDay = calendar.startOfDay(for: baseDate)
+        
+        // 시간 추가
+        guard let finalDate = calendar.date(byAdding: .hour, value: hour, to: startOfDay),
+              let finalDateWithMinute = calendar.date(byAdding: .minute, value: minute, to: finalDate) else {
+            return nil
+        }
+        
+        if finalDateWithMinute > now {
+            print("⚠️ Generated date \(finalDateWithMinute) is in the future, using \(now) instead")
+            return now.addingTimeInterval(-Double.random(in: 60...3600)) // 1분~1시간 전으로 조정
+        }
+        
+        return finalDateWithMinute
+    }
+    
+    private func generateNormalMockData() async throws {
         let unit = HKUnit.gramUnit(with: .milli).unitDivided(by: HKUnit.liter())
         
+        print("🔄 Generating normal mock data...")
+        
         for day in 0..<14 {
-            guard let baseDate = calendar.date(byAdding: .day, value: -day, to: now) else { continue }
-            
             let readings: [(hour: Int, value: Double)] = [
-                (7, Double.random(in: 85...95)),
-                (13, Double.random(in: 110...125)),
-                (19, Double.random(in: 100...120))
+                (7, Double.random(in: 85...95)),    // 공복혈당
+                (13, Double.random(in: 110...125)), // 점심 후
+                (19, Double.random(in: 100...120))  // 저녁 후
             ]
             
             for reading in readings {
-                guard let date = calendar.date(bySettingHour: reading.hour, minute: Int.random(in: 0...59), second: 0, of: baseDate) else {
+                guard let date = createSafeDate(
+                    daysAgo: day,
+                    hour: reading.hour,
+                    minute: Int.random(in: 0...59)
+                ) else {
+                    print("❌ Failed to create date for day \(day), hour \(reading.hour)")
                     continue
                 }
                 
                 try await saveBloodGlucoseSample(value: reading.value, unit: unit, date: date)
             }
         }
+        
+        print("✅ Normal mock data generation completed")
     }
     
     private func generateHighVariabilityMockData() async throws {
-        let calendar = Calendar.current
-        let now = Date()
         let unit = HKUnit.gramUnit(with: .milli).unitDivided(by: HKUnit.liter())
         
+        print("🔄 Generating high variability mock data...")
+        
         for day in 0..<14 {
-            guard let baseDate = calendar.date(byAdding: .day, value: -day, to: now) else { continue }
-            
             let readings: [(hour: Int, value: Double)] = [
                 (7, Double.random(in: 70...180)),
                 (13, Double.random(in: 70...180)),
@@ -338,83 +389,108 @@ extension MockHealthKitManager {
             ]
             
             for reading in readings {
-                guard let date = calendar.date(bySettingHour: reading.hour, minute: Int.random(in: 0...59), second: 0, of: baseDate) else {
+                guard let date = createSafeDate(
+                    daysAgo: day,
+                    hour: reading.hour,
+                    minute: Int.random(in: 0...59)
+                ) else {
                     continue
                 }
                 
                 try await saveBloodGlucoseSample(value: reading.value, unit: unit, date: date)
             }
         }
+        
+        print("✅ High variability mock data generation completed")
     }
     
     private func generateTrendingUpMockData() async throws {
-        let calendar = Calendar.current
-        let now = Date()
         let unit = HKUnit.gramUnit(with: .milli).unitDivided(by: HKUnit.liter())
         
+        print("🔄 Generating trending up mock data...")
+        
         for day in 0..<14 {
-            guard let baseDate = calendar.date(byAdding: .day, value: -day, to: now) else { continue }
-            
             let trend = Double(14 - day) * 2.0
             let readings: [(hour: Int, baseValue: Double)] = [
                 (7, 85.0),
-                (13, 115.0)
+                (13, 115.0),
+                (19, 105.0)
             ]
             
             for reading in readings {
                 let value = reading.baseValue + trend + Double.random(in: -3...3)
                 let clampedValue = max(70.0, min(200.0, value))
                 
-                guard let date = calendar.date(bySettingHour: reading.hour, minute: Int.random(in: 0...59), second: 0, of: baseDate) else {
+                guard let date = createSafeDate(
+                    daysAgo: day,
+                    hour: reading.hour,
+                    minute: Int.random(in: 0...59)
+                ) else {
                     continue
                 }
                 
                 try await saveBloodGlucoseSample(value: clampedValue, unit: unit, date: date)
             }
         }
+        
+        print("✅ Trending up mock data generation completed")
     }
     
     private func generateTrendingDownMockData() async throws {
-        let calendar = Calendar.current
-        let now = Date()
         let unit = HKUnit.gramUnit(with: .milli).unitDivided(by: HKUnit.liter())
         
+        print("🔄 Generating trending down mock data...")
+        
         for day in 0..<14 {
-            guard let baseDate = calendar.date(byAdding: .day, value: -day, to: now) else { continue }
-            
             let trend = Double(day) * -1.5
             let readings: [(hour: Int, baseValue: Double)] = [
                 (7, 110.0),
-                (13, 140.0)
+                (13, 140.0),
+                (19, 125.0)
             ]
             
             for reading in readings {
                 let value = reading.baseValue + trend + Double.random(in: -3...3)
                 let clampedValue = max(70.0, min(200.0, value))
                 
-                guard let date = calendar.date(bySettingHour: reading.hour, minute: Int.random(in: 0...59), second: 0, of: baseDate) else {
+                guard let date = createSafeDate(
+                    daysAgo: day,
+                    hour: reading.hour,
+                    minute: Int.random(in: 0...59)
+                ) else {
                     continue
                 }
                 
                 try await saveBloodGlucoseSample(value: clampedValue, unit: unit, date: date)
             }
         }
+        
+        print("✅ Trending down mock data generation completed")
     }
     
     private func generateSparseDataMockData() async throws {
-        let calendar = Calendar.current
-        let now = Date()
         let unit = HKUnit.gramUnit(with: .milli).unitDivided(by: HKUnit.liter())
+        
+        print("🔄 Generating sparse mock data...")
         
         let sparseDays = [0, 3, 7, 10, 13]
         
         for day in sparseDays {
-            guard let baseDate = calendar.date(byAdding: .day, value: -day, to: now) else { continue }
-            guard let date = calendar.date(bySettingHour: Int.random(in: 7...19), minute: Int.random(in: 0...59), second: 0, of: baseDate) else { continue }
-            
+            let hour = Int.random(in: 7...19)
             let value = Double.random(in: 80...140)
+            
+            guard let date = createSafeDate(
+                daysAgo: day,
+                hour: hour,
+                minute: Int.random(in: 0...59)
+            ) else {
+                continue
+            }
+            
             try await saveBloodGlucoseSample(value: value, unit: unit, date: date)
         }
+        
+        print("✅ Sparse mock data generation completed")
     }
 }
 
