@@ -176,7 +176,7 @@ class MockHealthKitManager: HealthKitManagerProtocol, ObservableObject {
         let allowedFutureDate = now.addingTimeInterval(60) // 1분 여유
         
         guard date <= allowedFutureDate else {
-            print("❌ Date validation failed:")
+            print("   Date validation failed:")
             print("   Trying to save date: \(date)")
             print("   Current time: \(now)")
             print("   Difference: \(date.timeIntervalSince(now)) seconds")
@@ -193,9 +193,9 @@ class MockHealthKitManager: HealthKitManagerProtocol, ObservableObject {
         
         do {
             try await healthStore.save(sample)
-            print("✅ Successfully saved sample: \(value) mg/dL at \(date)")
+            print("   Successfully saved sample: \(value) mg/dL at \(date)")
         } catch {
-            print("❌ Failed to save sample: \(error)")
+            print("   Failed to save sample: \(error)")
             throw HealthKitError.dataSaveFailed(error.localizedDescription)
         }
     }
@@ -350,7 +350,7 @@ extension MockHealthKitManager {
     private func generateNormalMockData() async throws {
         let unit = HKUnit.gramUnit(with: .milli).unitDivided(by: HKUnit.liter())
         
-        print("🔄 Generating normal mock data...")
+        print("Generating normal mock data...")
         
         for day in 0..<14 {
             let readings: [(hour: Int, value: Double)] = [
@@ -365,7 +365,7 @@ extension MockHealthKitManager {
                     hour: reading.hour,
                     minute: Int.random(in: 0...59)
                 ) else {
-                    print("❌ Failed to create date for day \(day), hour \(reading.hour)")
+                    print("   Failed to create date for day \(day), hour \(reading.hour)")
                     continue
                 }
                 
@@ -373,13 +373,13 @@ extension MockHealthKitManager {
             }
         }
         
-        print("✅ Normal mock data generation completed")
+        print("    Normal mock data generation completed")
     }
     
     private func generateHighVariabilityMockData() async throws {
         let unit = HKUnit.gramUnit(with: .milli).unitDivided(by: HKUnit.liter())
         
-        print("🔄 Generating high variability mock data...")
+        print("Generating high variability mock data...")
         
         for day in 0..<14 {
             let readings: [(hour: Int, value: Double)] = [
@@ -401,13 +401,13 @@ extension MockHealthKitManager {
             }
         }
         
-        print("✅ High variability mock data generation completed")
+        print("    High variability mock data generation completed")
     }
     
     private func generateTrendingUpMockData() async throws {
         let unit = HKUnit.gramUnit(with: .milli).unitDivided(by: HKUnit.liter())
         
-        print("🔄 Generating trending up mock data...")
+        print("Generating trending up mock data...")
         
         for day in 0..<14 {
             let trend = Double(14 - day) * 2.0
@@ -433,13 +433,13 @@ extension MockHealthKitManager {
             }
         }
         
-        print("✅ Trending up mock data generation completed")
+        print("    Trending up mock data generation completed")
     }
     
     private func generateTrendingDownMockData() async throws {
         let unit = HKUnit.gramUnit(with: .milli).unitDivided(by: HKUnit.liter())
         
-        print("🔄 Generating trending down mock data...")
+        print("Generating trending down mock data...")
         
         for day in 0..<14 {
             let trend = Double(day) * -1.5
@@ -465,13 +465,13 @@ extension MockHealthKitManager {
             }
         }
         
-        print("✅ Trending down mock data generation completed")
+        print("    Trending down mock data generation completed")
     }
     
     private func generateSparseDataMockData() async throws {
         let unit = HKUnit.gramUnit(with: .milli).unitDivided(by: HKUnit.liter())
         
-        print("🔄 Generating sparse mock data...")
+        print("Generating sparse mock data...")
         
         let sparseDays = [0, 3, 7, 10, 13]
         
@@ -490,7 +490,7 @@ extension MockHealthKitManager {
             try await saveBloodGlucoseSample(value: value, unit: unit, date: date)
         }
         
-        print("✅ Sparse mock data generation completed")
+        print("    Sparse mock data generation completed")
     }
 }
 
