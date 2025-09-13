@@ -1,12 +1,4 @@
 //
-//  ReportView 2.swift
-//  GlucoseTracker
-//
-//  Created by taeni on 9/9/25.
-//
-
-
-//
 //  ReportView.swift
 //  GlucoseTracker
 //
@@ -20,25 +12,9 @@ import HealthKit
 struct ReportView: View {
     @State private var bloodGlucoseData: [BloodGlucoseReading] = []
     @State private var isLoading = false
-    @State private var selectedTimeRange: TimeRange = .sevenDays
     @StateObject private var authManager = HealthKitAuthorizationManager()
     
     private let healthKitManager: HealthKitManagerProtocol
-    
-    private var chartData: [ChartDataPoint] {
-        BloodGlucoseAnalytics.generateChartData(
-            from: bloodGlucoseData,
-            timeRange: selectedTimeRange
-        )
-    }
-    
-    private var fastingAnalytics: GlucoseAnalytics {
-        BloodGlucoseAnalytics.calculateFastingAnalytics(from: bloodGlucoseData)
-    }
-    
-    private var postMealAnalytics: GlucoseAnalytics {
-        BloodGlucoseAnalytics.calculatePostMealAnalytics(from: bloodGlucoseData)
-    }
     
     init(healthKitManager: HealthKitManagerProtocol = HealthKitManager.shared) {
         self.healthKitManager = healthKitManager
@@ -67,12 +43,10 @@ struct ReportView: View {
     private var mainContent: some View {
         ScrollView {
             VStack(spacing: 24) {
-                timeRangeSelector
-                
                 if isLoading {
                     LoadingView()
                 } else {
-                    analyticsContent
+                    reportContent
                 }
             }
             .padding()
@@ -81,35 +55,24 @@ struct ReportView: View {
         .navigationBarTitleDisplayMode(.large)
     }
     
-    private var timeRangeSelector: some View {
-        Picker("Time Range", selection: $selectedTimeRange) {
-            ForEach(TimeRange.allCases, id: \.self) { range in
-                Text(range.displayName)
-                    .tag(range)
-            }
-        }
-        .pickerStyle(.segmented)
-        .onChange(of: selectedTimeRange) { _, _ in
-            Task { await loadReportData() }
-        }
-    }
-    
-    private var analyticsContent: some View {
-        VStack(spacing: 24) {
-            AnalyticsCard(
+    private var reportContent: some View {
+        let analytics = WeeklyGlucoseAnalyzer.analyze(bloodGlucoseData)
+        
+        return VStack(spacing: 24) {
+            WeekRangeHeader(dateRange: analytics.dateRange)
+            
+            GlucoseReportCard(
                 title: "Fasting Glucose",
-                analytics: fastingAnalytics,
-                chartData: chartData.filter { $0.type == .fasting },
-                color: .blue,
-                timeRange: selectedTimeRange
+                metrics: analytics.fasting,
+                chartData: analytics.fastingChartData,
+                color: .blue
             )
             
-            AnalyticsCard(
+            GlucoseReportCard(
                 title: "Post-meal Glucose",
-                analytics: postMealAnalytics,
-                chartData: chartData.filter { $0.type == .postMeal },
-                color: .orange,
-                timeRange: selectedTimeRange
+                metrics: analytics.postMeal,
+                chartData: analytics.postMealChartData,
+                color: .orange
             )
         }
     }
@@ -120,8 +83,8 @@ struct ReportView: View {
         }
         
         do {
-            let startDate = selectedTimeRange.startDate
-            let samples = try await healthKitManager.readBloodGlucoseSamples(since: startDate)
+            let twoWeeksAgo = Calendar.current.date(byAdding: .day, value: -14, to: Date()) ?? Date()
+            let samples = try await healthKitManager.readBloodGlucoseSamples(since: twoWeeksAgo)
             let readings = BloodGlucoseDataProcessor.processBloodGlucoseSamples(samples)
             
             await MainActor.run {
@@ -138,217 +101,330 @@ struct ReportView: View {
     }
 }
 
-struct AnalyticsCard: View {
+// MARK: - Week Range Header
+
+struct WeekRangeHeader: View {
+    let dateRange: WeekDateRange
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("This Week")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Spacer()
+                Text(dateRange.currentWeekFormatted)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            
+            HStack {
+                Text("Last Week")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Spacer()
+                Text(dateRange.previousWeekFormatted)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+// MARK: - Report Card Component
+
+struct GlucoseReportCard: View {
     let title: String
-    let analytics: GlucoseAnalytics
-    let chartData: [ChartDataPoint]
+    let metrics: WeeklyMetrics
+    let chartData: [WeeklyDataPoint]
     let color: Color
-    let timeRange: TimeRange
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            headerSection
-            chartSection
+            cardHeader
+            weeklyChart
         }
         .padding()
         .background(Color(.systemGray6))
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
     
-    private var headerSection: some View {
+    private var cardHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.headline)
                 .fontWeight(.bold)
             
             HStack {
-                Text("\(timeRange.displayName) Avg: \(analytics.formattedAverage) mg/dL")
+                Text("This Week Avg: \(metrics.formattedAverage) mg/dL")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 
                 Spacer()
                 
-                if analytics.percentageChange != 0 {
-                    PercentageChangeView(percentage: analytics.percentageChange)
+                if metrics.weekOverWeekChange != 0 {
+                    PercentageChangeIndicator(change: metrics.weekOverWeekChange)
                 }
             }
         }
     }
     
-    private var chartSection: some View {
-        Group {
-            if chartData.isEmpty {
-                Text("No data available")
-                    .foregroundColor(.secondary)
-                    .frame(height: 120)
-                    .frame(maxWidth: .infinity)
-            } else {
-                Chart(chartData, id: \.date) { dataPoint in
-                    BarMark(
-                        x: .value("Date", dataPoint.date),
-                        y: .value("Glucose", dataPoint.value)
-                    )
+    private var weeklyChart: some View {
+        Chart {
+            ForEach(chartData, id: \.weekday) { dataPoint in
+                BarMark(
+                    x: .value("Day", dataPoint.dayName),
+                    y: .value("Glucose", dataPoint.displayValue)
+                )
+                .foregroundStyle(dataPoint.hasData ? color : Color.gray.opacity(0.2))
+            }
+            
+            if metrics.average > 0 {
+                RuleMark(y: .value("Average", metrics.average))
                     .foregroundStyle(color)
-                }
-                .frame(height: 120)
-                .chartYScale(domain: 50...200)
-                .chartXAxis {
-                    AxisMarks(values: .stride(by: .day)) { _ in
-                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                    .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
+                    .annotation(position: .topTrailing) {
+                        Text("Avg")
+                            .font(.caption2)
+                            .foregroundColor(color)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color(.systemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
-                }
+            }
+        }
+        .frame(height: 180)
+        .chartYScale(domain: 0...200)
+        .chartXAxis {
+            AxisMarks { _ in
+                AxisValueLabel()
             }
         }
     }
 }
 
-struct PercentageChangeView: View {
-    let percentage: Double
+// MARK: - Percentage Change Indicator
+
+struct PercentageChangeIndicator: View {
+    let change: Double
     
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: percentage >= 0 ? "arrow.up" : "arrow.down")
+            Image(systemName: change >= 0 ? "arrow.up" : "arrow.down")
                 .font(.caption)
             
-            Text("\(abs(percentage), specifier: "%.1f")%")
+            Text("\(abs(change), specifier: "%.1f")%")
                 .font(.caption)
                 .fontWeight(.medium)
         }
-        .foregroundColor(percentage >= 0 ? .green : .red)
+        .foregroundColor(change >= 0 ? .green : .red)
     }
 }
 
-enum TimeRange: String, CaseIterable {
-    case sevenDays = "7d"
-    case thirtyDays = "30d"
-    case ninetyDays = "90d"
+// MARK: - Data Models
+
+struct WeeklyAnalytics {
+    let fasting: WeeklyMetrics
+    let postMeal: WeeklyMetrics
+    let fastingChartData: [WeeklyDataPoint]
+    let postMealChartData: [WeeklyDataPoint]
+    let dateRange: WeekDateRange
+}
+
+struct WeekDateRange {
+    let currentWeekStart: Date
+    let currentWeekEnd: Date
+    let previousWeekStart: Date
+    let previousWeekEnd: Date
     
-    var displayName: String {
-        switch self {
-        case .sevenDays:
-            return "7 Days"
-        case .thirtyDays:
-            return "30 Days"
-        case .ninetyDays:
-            return "90 Days"
-        }
+    var currentWeekFormatted: String {
+        formatWeekRange(start: currentWeekStart, end: currentWeekEnd)
     }
     
-    var startDate: Date {
-        let calendar = Calendar.current
-        switch self {
-        case .sevenDays:
-            return calendar.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        case .thirtyDays:
-            return calendar.date(byAdding: .day, value: -30, to: Date()) ?? Date()
-        case .ninetyDays:
-            return calendar.date(byAdding: .day, value: -90, to: Date()) ?? Date()
-        }
+    var previousWeekFormatted: String {
+        formatWeekRange(start: previousWeekStart, end: previousWeekEnd)
+    }
+    
+    private func formatWeekRange(start: Date, end: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        
+        let startString = formatter.string(from: start)
+        let endString = formatter.string(from: end)
+        
+        return "\(startString) - \(endString)"
     }
 }
 
-struct ChartDataPoint {
-    let date: Date
-    let value: Double
-    let type: GlucoseType
-}
-
-enum GlucoseType {
-    case fasting
-    case postMeal
-}
-
-struct GlucoseAnalytics {
+struct WeeklyMetrics {
     let average: Double
-    let percentageChange: Double
+    let weekOverWeekChange: Double
     
     var formattedAverage: String {
-        String(format: "%.1f", average)
+        String(format: "%.0f", average)
     }
 }
 
-struct BloodGlucoseAnalytics {
-    static func generateChartData(
-        from readings: [BloodGlucoseReading],
-        timeRange: TimeRange
-    ) -> [ChartDataPoint] {
+struct WeeklyDataPoint {
+    let weekday: Int // 1 = Sunday, 2 = Monday, ...
+    let value: Double
+    let hasData: Bool
+    
+    var dayName: String {
+        let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        return days[weekday - 1]
+    }
+    
+    var displayValue: Double {
+        hasData ? value : 0 // Minimum value for empty days
+    }
+}
+
+// MARK: - Analytics Engine
+
+struct WeeklyGlucoseAnalyzer {
+    static func analyze(_ readings: [BloodGlucoseReading]) -> WeeklyAnalytics {
         let calendar = Calendar.current
-        let startDate = timeRange.startDate
-        let endDate = Date()
+        let now = Date()
         
-        var chartData: [ChartDataPoint] = []
-        var currentDate = startDate
-        
-        while currentDate <= endDate {
-            let dayReadings = readings.filter { reading in
-                calendar.isDate(reading.date, inSameDayAs: currentDate)
-            }
-            
-            let fastingReadings = dayReadings.filter { isFastingReading($0) }
-            let postMealReadings = dayReadings.filter { !isFastingReading($0) }
-            
-            if !fastingReadings.isEmpty {
-                let average = fastingReadings.map { $0.value }.reduce(0, +) / Double(fastingReadings.count)
-                chartData.append(ChartDataPoint(date: currentDate, value: average, type: .fasting))
-            }
-            
-            if !postMealReadings.isEmpty {
-                let average = postMealReadings.map { $0.value }.reduce(0, +) / Double(postMealReadings.count)
-                chartData.append(ChartDataPoint(date: currentDate, value: average, type: .postMeal))
-            }
-            
-            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate
+        guard let currentWeek = calendar.dateInterval(of: .weekOfYear, for: now),
+              let previousWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: currentWeek.start),
+              let previousWeek = calendar.dateInterval(of: .weekOfYear, for: previousWeekStart) else {
+            return createEmptyAnalytics()
         }
         
-        return chartData
+        let dateRange = WeekDateRange(
+            currentWeekStart: currentWeek.start,
+            currentWeekEnd: calendar.date(byAdding: .day, value: -1, to: currentWeek.end) ?? currentWeek.end,
+            previousWeekStart: previousWeek.start,
+            previousWeekEnd: calendar.date(byAdding: .day, value: -1, to: previousWeek.end) ?? previousWeek.end
+        )
+        
+        let currentWeekReadings = filterReadings(readings, in: currentWeek)
+        let previousWeekReadings = filterReadings(readings, in: previousWeek)
+        
+        let fastingMetrics = calculateMetrics(
+            current: filterFastingReadings(currentWeekReadings),
+            previous: filterFastingReadings(previousWeekReadings)
+        )
+        
+        let postMealMetrics = calculateMetrics(
+            current: filterPostMealReadings(currentWeekReadings),
+            previous: filterPostMealReadings(previousWeekReadings)
+        )
+        
+        let fastingChartData = generateChartData(
+            filterFastingReadings(currentWeekReadings),
+            weekInterval: currentWeek
+        )
+        
+        let postMealChartData = generateChartData(
+            filterPostMealReadings(currentWeekReadings),
+            weekInterval: currentWeek
+        )
+        
+        return WeeklyAnalytics(
+            fasting: fastingMetrics,
+            postMeal: postMealMetrics,
+            fastingChartData: fastingChartData,
+            postMealChartData: postMealChartData,
+            dateRange: dateRange
+        )
     }
     
-    static func calculateFastingAnalytics(from readings: [BloodGlucoseReading]) -> GlucoseAnalytics {
-        let fastingReadings = readings.filter { isFastingReading($0) }
+    private static func createEmptyAnalytics() -> WeeklyAnalytics {
+        let emptyMetrics = WeeklyMetrics(average: 0, weekOverWeekChange: 0)
+        let emptyChartData = createEmptyChartData()
         
-        guard !fastingReadings.isEmpty else {
-            return GlucoseAnalytics(average: 0, percentageChange: 0)
+        let calendar = Calendar.current
+        let now = Date()
+        let currentWeek = calendar.dateInterval(of: .weekOfYear, for: now) ?? DateInterval(start: now, duration: 0)
+        let previousWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: currentWeek.start) ?? now
+        let previousWeek = calendar.dateInterval(of: .weekOfYear, for: previousWeekStart) ?? DateInterval(start: previousWeekStart, duration: 0)
+        
+        let dateRange = WeekDateRange(
+            currentWeekStart: currentWeek.start,
+            currentWeekEnd: calendar.date(byAdding: .day, value: -1, to: currentWeek.end) ?? currentWeek.end,
+            previousWeekStart: previousWeek.start,
+            previousWeekEnd: calendar.date(byAdding: .day, value: -1, to: previousWeek.end) ?? previousWeek.end
+        )
+        
+        return WeeklyAnalytics(
+            fasting: emptyMetrics,
+            postMeal: emptyMetrics,
+            fastingChartData: emptyChartData,
+            postMealChartData: emptyChartData,
+            dateRange: dateRange
+        )
+    }
+    
+    private static func createEmptyChartData() -> [WeeklyDataPoint] {
+        return (1...7).map { weekday in
+            WeeklyDataPoint(weekday: weekday, value: 0, hasData: false)
         }
-        
-        let average = fastingReadings.map { $0.value }.reduce(0, +) / Double(fastingReadings.count)
-        let percentageChange = calculatePercentageChange(for: fastingReadings)
-        
-        return GlucoseAnalytics(average: average, percentageChange: percentageChange)
     }
     
-    static func calculatePostMealAnalytics(from readings: [BloodGlucoseReading]) -> GlucoseAnalytics {
-        let postMealReadings = readings.filter { !isFastingReading($0) }
-        
-        guard !postMealReadings.isEmpty else {
-            return GlucoseAnalytics(average: 0, percentageChange: 0)
-        }
-        
-        let average = postMealReadings.map { $0.value }.reduce(0, +) / Double(postMealReadings.count)
-        let percentageChange = calculatePercentageChange(for: postMealReadings)
-        
-        return GlucoseAnalytics(average: average, percentageChange: percentageChange)
+    private static func filterReadings(_ readings: [BloodGlucoseReading], in interval: DateInterval) -> [BloodGlucoseReading] {
+        return readings.filter { interval.contains($0.date) }
     }
     
-    private static func isFastingReading(_ reading: BloodGlucoseReading) -> Bool {
-        let hour = Calendar.current.component(.hour, from: reading.date)
+    private static func filterFastingReadings(_ readings: [BloodGlucoseReading]) -> [BloodGlucoseReading] {
+        return readings.filter { isFastingTime($0.date) }
+    }
+    
+    private static func filterPostMealReadings(_ readings: [BloodGlucoseReading]) -> [BloodGlucoseReading] {
+        return readings.filter { !isFastingTime($0.date) }
+    }
+    
+    private static func isFastingTime(_ date: Date) -> Bool {
+        let hour = Calendar.current.component(.hour, from: date)
         return hour >= 6 && hour <= 9
     }
     
-    private static func calculatePercentageChange(for readings: [BloodGlucoseReading]) -> Double {
-        guard readings.count >= 2 else { return 0 }
+    private static func calculateMetrics(current: [BloodGlucoseReading], previous: [BloodGlucoseReading]) -> WeeklyMetrics {
+        let currentAverage = calculateAverage(current)
+        let previousAverage = calculateAverage(previous)
+        let change = calculatePercentageChange(current: currentAverage, previous: previousAverage)
         
-        let sortedReadings = readings.sorted { $0.date < $1.date }
-        let firstHalf = Array(sortedReadings.prefix(sortedReadings.count / 2))
-        let secondHalf = Array(sortedReadings.suffix(sortedReadings.count / 2))
+        return WeeklyMetrics(average: currentAverage, weekOverWeekChange: change)
+    }
+    
+    private static func calculateAverage(_ readings: [BloodGlucoseReading]) -> Double {
+        guard !readings.isEmpty else { return 0 }
+        let sum = readings.reduce(0) { $0 + $1.value }
+        return sum / Double(readings.count)
+    }
+    
+    private static func calculatePercentageChange(current: Double, previous: Double) -> Double {
+        guard previous > 0, current > 0 else { return 0 }
+        return ((current - previous) / previous) * 100
+    }
+    
+    private static func generateChartData(_ readings: [BloodGlucoseReading], weekInterval: DateInterval) -> [WeeklyDataPoint] {
+        let calendar = Calendar.current
+        var chartData: [WeeklyDataPoint] = []
         
-        guard !firstHalf.isEmpty && !secondHalf.isEmpty else { return 0 }
+        for dayOffset in 0..<7 {
+            guard let dayDate = calendar.date(byAdding: .day, value: dayOffset, to: weekInterval.start) else {
+                continue
+            }
+            
+            let weekday = dayOffset + 1
+            let dayReadings = readings.filter { calendar.isDate($0.date, inSameDayAs: dayDate) }
+            
+            if dayReadings.isEmpty {
+                chartData.append(WeeklyDataPoint(weekday: weekday, value: 0, hasData: false))
+            } else {
+                let average = calculateAverage(dayReadings)
+                chartData.append(WeeklyDataPoint(weekday: weekday, value: average, hasData: true))
+            }
+        }
         
-        let firstAverage = firstHalf.map { $0.value }.reduce(0, +) / Double(firstHalf.count)
-        let secondAverage = secondHalf.map { $0.value }.reduce(0, +) / Double(secondHalf.count)
-        
-        guard firstAverage > 0 else { return 0 }
-        
-        return ((secondAverage - firstAverage) / firstAverage) * 100
+        return chartData
     }
 }
 

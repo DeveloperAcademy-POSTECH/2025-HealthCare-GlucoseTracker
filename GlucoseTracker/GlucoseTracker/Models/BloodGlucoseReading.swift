@@ -18,6 +18,11 @@ struct BloodGlucoseReading: Identifiable {
         self.value = sample.quantity.doubleValue(for: bloodGlucoseUnit)
         self.date = sample.startDate
     }
+    
+    init(value: Double, date: Date) {
+        self.value = value
+        self.date = date
+    }
 }
 
 extension BloodGlucoseReading {
