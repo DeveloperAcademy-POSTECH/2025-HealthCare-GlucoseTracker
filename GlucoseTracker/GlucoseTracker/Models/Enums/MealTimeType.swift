@@ -5,109 +5,118 @@
 //  Created by taeni on 9/10/25.
 //
 
+//
+//  MealTimeType.swift
+//  GlucoseTracker
+//
+//  Created by taeni on 9/13/25.
+//
+
 import SwiftUI
 import Foundation
 
-enum MealTimeType: String, CaseIterable, Codable {
-    case fasting = "fasting"
-    case postMeal = "postMeal"
-    case other = "other"
+enum MealTimeType: CaseIterable {
+    case fasting
+    case postMeal
+    case other
     
-    // Display name for UI
     var displayName: String {
         switch self {
         case .fasting:
             return "Fasting"
         case .postMeal:
-            return "After Meal"
+            return "Post-meal"
         case .other:
             return "Other"
         }
     }
     
-    // Target range description
-    var targetRangeDescription: String {
-        switch self {
-        case .fasting:
-            return "Target fasting blood glucose: 80-130mg/dL (American Diabetes Association)"
-        case .postMeal:
-            return "Target post-meal blood glucose: < 180mg/dL (American Diabetes Association)"
-        case .other:
-            return "Maintain a healthy blood glucose level for overall well-being."
-        }
-    }
-    
-    // Normal glucose range
-    var normalRange: ClosedRange<Int> {
+    var normalRange: ClosedRange<Double> {
         switch self {
         case .fasting:
             return 80...130
         case .postMeal:
-            return 100...179  // Less than 180 is considered normal
+            return 80...180
         case .other:
-            return 70...200
+            return 80...140
         }
     }
     
-    // Check if glucose level is normal for this meal type
-    func isNormal(glucoseLevel: Double) -> Bool {
-        let level = Int(glucoseLevel)
-        return normalRange.contains(level)
+    var lowThreshold: Double {
+        return 80
     }
     
-    // Get color based on glucose level for this meal type
-    func getGlucoseColor(for glucoseLevel: Double) -> Color {
-        return isNormal(glucoseLevel: glucoseLevel) ? .primary : .orange
-    }
-    
-    // Static method to determine meal type from reading time
     static func from(reading: BloodGlucoseReading) -> MealTimeType {
         let hour = Calendar.current.component(.hour, from: reading.date)
         return from(hour: hour)
     }
     
-    // Static method to determine meal type from hour
     static func from(hour: Int) -> MealTimeType {
-        switch hour {
-        case 6...9:
+        if hour >= 6 && hour <= 9 {
             return .fasting
-        case 10...23:
+        } else if hour > 9 && hour <= 23 {
             return .postMeal
-        default:
+        } else {
             return .other
         }
     }
     
-    // Get greeting message based on meal type and current time
-    var greetingMessage: String {
-        switch self {
-        case .fasting:
-            return "Good Morning,\nLet's check fasting glucose level"
-        case .postMeal:
-            return "Good Afternoon,\nHave you checked your glucose today?"
-        case .other:
-            return "Hello,\nTime to check your glucose level"
+    func getGlucoseColor(for value: Double) -> Color {
+        if value < lowThreshold {
+            return .blue // Low glucose
+        } else if normalRange.contains(value) {
+            return .green // Normal range
+        } else {
+            return .red // High glucose
         }
     }
     
-    // Get reminder message based on meal type
-    var reminderMessage: String {
-        switch self {
-        case .fasting:
-            return "Please remember to check your fasting blood sugar in the morning before eating or drinking anything. It's important for monitoring your health effectively."
-        case .postMeal:
-            return "Monitoring your glucose levels throughout the day is crucial. Make sure to record your post-meal readings for better tracking."
-        case .other:
-            return "Regular glucose monitoring helps maintain better control of your condition."
+    func getGlucoseStatus(for value: Double) -> GlucoseStatus {
+        if value < lowThreshold {
+            return .low
+        } else if normalRange.contains(value) {
+            return .normal
+        } else {
+            return .high
         }
     }
 }
 
-// MARK: - Helper Extensions
-extension MealTimeType {
-    // Get current meal type based on current time
-    static var current: MealTimeType {
-        let hour = Calendar.current.component(.hour, from: Date())
-        return from(hour: hour)
+enum GlucoseStatus {
+    case low
+    case normal
+    case high
+    
+    var displayName: String {
+        switch self {
+        case .low:
+            return "Low"
+        case .normal:
+            return "Normal"
+        case .high:
+            return "High"
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .low:
+            return .blue
+        case .normal:
+            return .green
+        case .high:
+            return .red
+        }
+    }
+    
+    var systemImageName: String {
+        switch self {
+        case .low:
+            return "arrow.down.circle.fill"
+        case .normal:
+            return "checkmark.circle.fill"
+        case .high:
+            return "arrow.up.circle.fill"
+        }
     }
 }
