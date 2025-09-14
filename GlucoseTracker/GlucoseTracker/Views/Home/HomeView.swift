@@ -9,48 +9,43 @@ import SwiftUI
 import HealthKit
 
 struct HomeView: View {
-
-    // 기존에 있던 웹뷰 상태 그대로 유지
-    @State private var showWebView = false
-
-// MARK: - HealthKit Manager
-    @StateObject private var mockManager = MockHealthKitManager.shared
-    @State private var isRequestingAuth = false
-    @State private var isSaving = false
-    @State private var errorAlertMessage: String?
-    @State private var showErrorAlert = false
-
-// MARK: - 혈당 기록 상태
+    @EnvironmentObject private var authManager: HealthKitAuthorizationManager
+    
+    // 혈당 기록 상태
     @State private var selectedDate = Date()
     @State private var selectedTime = Date()
-    @State private var bloodGlucose: String = ""          // 사용자가 입력 (mg/dL)
-    @State private var mealTime: MealTime = .fasting      // 기본값 Fasting
+    @State private var bloodGlucose: String = ""
+    @State private var mealTime: HKBloodGlucoseMealTime? = .preprandial  // HealthKit 표준 직접 사용
+    @State private var isSaving = false
     @State private var showSavedAlert = false
+    @State private var errorMessage: String?
+    @State private var showErrorAlert = false
     @FocusState private var bgFieldFocused: Bool
-
+    
+    // 개인정보 처리 방침
+    @State private var showWebView = false
+    
+    private let healthKitManager: HealthKitManagerProtocol
+    
+    init(healthKitManager: HealthKitManagerProtocol = HealthKitManager.shared) {
+        self.healthKitManager = healthKitManager
+    }
+    
     // 계산 속성
     private var glucoseDouble: Double? { Double(bloodGlucose) }
-    private var isFastingTargetOK: Bool {
-        guard let v = glucoseDouble else { return false }
-        // 80~130 mg/dL
-        return (80.0...130.0).contains(v)
+    
+    private var isValidInput: Bool {
+        guard let value = glucoseDouble else { return false }
+        return value > 0 && value <= 500
     }
-
+    
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-
-                    // 상단 고정 메시지 카드
                     greetingCard
-
-                    // 권한 상태/요청
-                    authorizationCard
-
-                    // Record Blood Glucose 카드
                     recordCard
-
-                    // Record 버튼
+                    
                     Button(action: { Task { await saveRecordToHealth() } }) {
                         Label("Record", systemImage: "plus.circle.fill")
                             .font(.headline)
@@ -61,49 +56,51 @@ struct HomeView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
                     .padding(.horizontal)
-                    .disabled(isSaving)
+                    .disabled(isSaving || !isValidInput)
                 }
                 .padding()
             }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showWebView = true }) {
+                        Image(systemName: "doc.text")
+                    }
+                }
+            }
             .navigationTitle("Home")
         }
-        // 저장 완료 알림
         .alert("Saved", isPresented: $showSavedAlert) {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Your blood glucose record has been saved to Health.")
         }
-        // 오류 알림
         .alert("Error", isPresented: $showErrorAlert) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(errorAlertMessage ?? "Unknown error")
+            Text(errorMessage ?? "Unknown error")
         }
-        // 기존 개인정보정책 전체화면 웹뷰
         .fullScreenCover(isPresented: $showWebView) {
-            SafariView(url: URLConstants.naverURL)
+            SafariView(url: URLConstants.privacyURL)
                 .ignoresSafeArea()
         }
-        .task {
-            // 앱 진입 시 HealthKit 사용가능 여부 점검
-            _ = mockManager.isHealthKitAvailable()
-        }
     }
-
-    // MARK: - Subviews
-
+    
     private var greetingCard: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             Image(systemName: "heart.text.square")
-                .resizable()
-                .frame(width: 80, height: 80)
+                .font(.system(size: 60))
+                .foregroundColor(.red)
                 .padding(.bottom, 8)
-
-            Text("Good Morning,\nLet's check fasting glucose level")
+            
+            Text("Good Morning!")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            Text("Let's record your blood glucose level")
                 .font(.headline)
                 .multilineTextAlignment(.center)
-
-            Text("Please remember to check your fasting blood sugar in the morning before eating or drinking anything. It's important for monitoring your health effectively.")
+            
+            Text("Remember to check your fasting blood sugar in the morning before eating or drinking anything.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -112,179 +109,177 @@ struct HomeView: View {
         .background(Color(.systemGray6))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
-
-    private var authorizationCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("Health Access", systemImage: "heart.fill")
-                    .font(.headline)
-                Spacer()
-                Text(mockManager.isHealthKitAvailable() ? "Available" : "Unavailable")
-                    .foregroundColor(mockManager.isHealthKitAvailable() ? .green : .red)
-                    .font(.subheadline)
-            }
-
-            Text("Grant permission to save your blood glucose to the Health app.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-
-            Button {
-                Task {
-                    await requestAuthorization()
-                }
-            } label: {
-                HStack {
-                    if isRequestingAuth { ProgressView().scaleEffect(0.9) }
-                    Text("Grant Authorization")
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(isRequestingAuth)
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-
+    
     private var recordCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("RECORD BLOOD GLUCOSE")
                 .font(.caption)
+                .fontWeight(.semibold)
                 .foregroundColor(.secondary)
-
-            // Date
-            HStack {
-                Text("Date")
-                Spacer()
-                DatePicker("", selection: $selectedDate, displayedComponents: .date)
-                    .labelsHidden()
-                    .datePickerStyle(.compact)
-            }
-            Divider()
-
-            // Time
-            HStack {
-                Text("Time")
-                Spacer()
-                DatePicker("", selection: $selectedTime, displayedComponents: .hourAndMinute)
-                    .labelsHidden()
-                    .datePickerStyle(.compact)
-            }
-            Divider()
-
-            // Blood Glucose
-            HStack(spacing: 8) {
-                Text("Blood Glucose")
-                Spacer()
-                TextField("—", text: $bloodGlucose)
-                    .keyboardType(.decimalPad)
-                    .focused($bgFieldFocused)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 80)
-                Text("mg/dL")
-                    .foregroundColor(.secondary)
-
-                if isFastingTargetOK {
-                    Image(systemName: "checkmark.circle.fill")
-                        .imageScale(.medium)
-                        .foregroundColor(.green)
+            
+            VStack(spacing: 12) {
+                HStack {
+                    Text("Date")
+                        .fontWeight(.medium)
+                    Spacer()
+                    DatePicker("", selection: $selectedDate, displayedComponents: .date)
+                        .labelsHidden()
+                        .datePickerStyle(.compact)
                 }
-            }
-            Divider()
-
-            // Meal Time (UI 유지 — 현재 Mock 저장 API는 값/날짜만 받으므로 메타데이터 저장은 패스)
-            HStack {
-                Text("Meal Time")
-                Spacer()
-                Picker("Meal Time", selection: $mealTime) {
-                    ForEach(MealTime.allCases, id: \.self) { mt in
-                        Text(mt.rawValue).tag(mt)
+                
+                Divider()
+                
+                HStack {
+                    Text("Time")
+                        .fontWeight(.medium)
+                    Spacer()
+                    DatePicker("", selection: $selectedTime, displayedComponents: .hourAndMinute)
+                        .labelsHidden()
+                        .datePickerStyle(.compact)
+                }
+                
+                Divider()
+                
+                HStack(spacing: 8) {
+                    Text("Blood Glucose")
+                        .fontWeight(.medium)
+                    Spacer()
+                    
+                    TextField("Enter value", text: $bloodGlucose)
+                        .keyboardType(.decimalPad)
+                        .focused($bgFieldFocused)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 100)
+                        .textFieldStyle(.roundedBorder)
+                        .onChange(of: bloodGlucose) { _, newValue in
+                            let filtered = newValue.filter { $0.isNumber || $0 == "." }
+                            let components = filtered.components(separatedBy: ".")
+                            
+                            if components.count > 2 {
+                                bloodGlucose = components.prefix(2).joined(separator: ".")
+                            } else {
+                                bloodGlucose = filtered
+                            }
+                        }
+                    
+                    Text("mg/dL")
+                        .foregroundColor(.secondary)
+                    
+                    if let value = glucoseDouble {
+                        let status = mealTime.getGlucoseStatus(for: value)
+                        Image(systemName: status.systemImageName)
+                            .foregroundColor(status.color)
                     }
                 }
-                .pickerStyle(.menu)
+                
+                Divider()
+                
+                HStack {
+                    Text("Meal Time")
+                        .fontWeight(.medium)
+                    Spacer()
+                    
+                    Picker("Meal Time", selection: $mealTime) {
+                        Text("Before Meal (Fasting)").tag(HKBloodGlucoseMealTime?.some(.preprandial))
+                        Text("After Meal").tag(HKBloodGlucoseMealTime?.some(.postprandial))
+                        Text("Other").tag(HKBloodGlucoseMealTime?.none)
+                    }
+                    .pickerStyle(.menu)
+                }
             }
-
-            Text("Target fasting blood glucose: 80–130 mg/dL\n(American Diabetes Association)")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Target Range for \(mealTime.displayName):")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+                
+                Text("\(Int(mealTime.normalRange.lowerBound))–\(Int(mealTime.normalRange.upperBound)) mg/dL")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Text("(American Diabetes Association)")
+                    .font(.caption2)
+            }
         }
         .padding()
         .background(Color(.systemGray6))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
-
-    // MARK: - Actions
-
-    private func requestAuthorization() async {
-        guard mockManager.isHealthKitAvailable() else {
-            showError("HealthKit is not available on this device.")
-            return
-        }
-        isRequestingAuth = true
-        do {
-            _ = try await mockManager.requestAuthorization()
-        } catch {
-            showError("Authorization failed: \(error.localizedDescription)")
-        }
-        isRequestingAuth = false
-    }
-
+    
     private func saveRecordToHealth() async {
-        // 값 검증
         guard let value = glucoseDouble, value > 0, value <= 500 else {
+            showError("Please enter a valid blood glucose value (1-500 mg/dL)")
             bgFieldFocused = true
             return
         }
-
-        // 권한 없을 수 있으니 시도 전 한 번 요청(이미 허용이면 빠르게 통과)
-        if mockManager.isHealthKitAvailable() {
-            do {
-                _ = try await mockManager.requestAuthorization()
-            } catch {
-                showError("Please grant Health access to save readings. \(error.localizedDescription)")
+        
+        let combinedDateTime = combine(datePart: selectedDate, timePart: selectedTime)
+        isSaving = true
+        
+        do {
+            let unit = HKUnit.gramUnit(with: .milli).unitDivided(by: HKUnit.liter())
+            let quantity = HKQuantity(unit: unit, doubleValue: value)
+            
+            var metadata: [String: Any] = [
+                HKMetadataKeyWasUserEntered: true
+            ]
+            
+            if let mealTime = mealTime {
+                metadata[HKMetadataKeyBloodGlucoseMealTime] = mealTime.rawValue
+            }
+            
+            guard let bloodGlucoseType = HKQuantityType.quantityType(forIdentifier: .bloodGlucose) else {
+                showError("Failed to create blood glucose type")
+                isSaving = false
                 return
             }
-        } else {
-            showError("HealthKit is not available on this device.")
-            return
-        }
-
-        let when = combine(datePart: selectedDate, timePart: selectedTime)
-
-        isSaving = true
-        do {
-            try await mockManager.addMockSample(value: value, date: when)
+            
+            let sample = HKQuantitySample(
+                type: bloodGlucoseType,
+                quantity: quantity,
+                start: combinedDateTime,
+                end: combinedDateTime,
+                metadata: metadata
+            )
+            
+            let healthStore = HKHealthStore()
+            try await healthStore.save(sample)
+            
             showSavedAlert = true
-            bloodGlucose = "" // 입력값 초기화(선택)
+            bloodGlucose = ""
+            selectedTime = Date()
+            
         } catch {
-            showError("Failed to save to Health: \(error.localizedDescription)")
+            showError("Failed to save reading: \(error.localizedDescription)")
         }
+        
         isSaving = false
     }
-
-    private func showError(_ msg: String) {
-        errorAlertMessage = msg
+    
+    private func showError(_ message: String) {
+        errorMessage = message
         showErrorAlert = true
     }
-
+    
     private func combine(datePart: Date, timePart: Date) -> Date {
-        let cal = Calendar.current
-        let d = cal.dateComponents([.year, .month, .day], from: datePart)
-        let t = cal.dateComponents([.hour, .minute, .second], from: timePart)
-        var c = DateComponents()
-        c.year = d.year; c.month = d.month; c.day = d.day
-        c.hour = t.hour; c.minute = t.minute; c.second = t.second
-        return cal.date(from: c) ?? datePart
+        let calendar = Calendar.current
+        let dateComponents = calendar.dateComponents([.year, .month, .day], from: datePart)
+        let timeComponents = calendar.dateComponents([.hour, .minute, .second], from: timePart)
+        
+        var combined = DateComponents()
+        combined.year = dateComponents.year
+        combined.month = dateComponents.month
+        combined.day = dateComponents.day
+        combined.hour = timeComponents.hour
+        combined.minute = timeComponents.minute
+        combined.second = timeComponents.second
+        
+        return calendar.date(from: combined) ?? datePart
     }
-}
-
-// MARK: - UI용 enum (UI는 유지, 저장은 HealthKit에 Double mg/dL로 기록)
-enum MealTime: String, CaseIterable, Codable {
-    case fasting = "Fasting"
-    case eating  = "Eating"
 }
 
 #Preview {
     HomeView()
 }
+

@@ -5,6 +5,13 @@
 //  Created by taeni on 9/9/25.
 //
 
+//
+//  BloodGlucoseDataProcessor.swift
+//  GlucoseTracker
+//
+//  HKBloodGlucoseMealTime 사용하도록 완전 리팩토링
+//
+
 import Foundation
 import HealthKit
 
@@ -16,15 +23,9 @@ struct BloodGlucoseDataProcessor {
     
     static func calculateSummary(from readings: [BloodGlucoseReading]) -> BloodGlucoseSummary {
         
-        let fastingReadings = readings.filter { reading in
-            let hour = Calendar.current.component(.hour, from: reading.date)
-            return hour >= 6 && hour <= 9
-        }
-        
-        let postMealReadings = readings.filter { reading in
-            let hour = Calendar.current.component(.hour, from: reading.date)
-            return hour > 9
-        }
+        // HKBloodGlucoseMealTime 기반 분류
+        let fastingReadings = readings.filter { $0.mealTime == .preprandial }
+        let postMealReadings = readings.filter { $0.mealTime == .postprandial }
         
         let fastingAverage = fastingReadings.isEmpty ? nil : fastingReadings.map { $0.value }.reduce(0, +) / Double(fastingReadings.count)
         let postMealAverage = postMealReadings.isEmpty ? nil : postMealReadings.map { $0.value }.reduce(0, +) / Double(postMealReadings.count)

@@ -9,9 +9,30 @@ import SwiftUI
 
 @main
 struct GlucoseTrackerApp: App {
+    @StateObject private var authManager = HealthKitAuthorizationManager()
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Group {
+                switch authManager.authorizationStatus {
+                case .notDetermined:
+                    PermissionRequestView()
+                case .authorized:
+                    ContentView()
+                case .denied:
+                    PermissionDeniedView()
+                case .unavailable:
+                    HealthKitUnavailableView()
+                }
+            }
+            .environmentObject(authManager)
+            .task {
+                authManager.checkAuthorizationStatus()
+                
+                if authManager.needsAuthorization {
+                    await authManager.requestAuthorization()
+                }
+            }
         }
     }
 }

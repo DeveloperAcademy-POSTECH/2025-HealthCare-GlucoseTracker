@@ -13,7 +13,8 @@ protocol HealthKitManagerProtocol {
     func readBloodGlucoseSamples(since date: Date) async throws -> [HKQuantitySample]
     func readBloodGlucoseSamples(from startDate: Date, to endDate: Date) async throws -> [HKQuantitySample]
     func getLatestBloodGlucoseReading() async throws -> HKQuantitySample?
-    func saveBloodGlucoseSample(value: Double, unit: HKUnit, date: Date) async throws
+    func saveBloodGlucoseSample(value: Double, date: Date) async throws
+    func saveBloodGlucoseSample(value: Double, unit: HKUnit, date: Date, metadata: [String: Any]) async throws
     func deleteBloodGlucoseSample(_ sample: HKQuantitySample) async throws
     func isHealthKitAvailable() -> Bool
 }

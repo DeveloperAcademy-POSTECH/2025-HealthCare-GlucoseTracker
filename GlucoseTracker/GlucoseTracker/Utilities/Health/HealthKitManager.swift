@@ -7,7 +7,7 @@
 
 import HealthKit
 
-class HealthKitManager: HealthKitManagerProtocol {
+class HealthKitManager: HealthKitManagerProtocol, ObservableObject {
     
     static let shared = HealthKitManager()
     
@@ -93,10 +93,6 @@ class HealthKitManager: HealthKitManagerProtocol {
         }
     }
     
-    func isHealthKitAvailable() -> Bool {
-        return HKHealthStore.isHealthDataAvailable() && validateBloodGlucoseTypeSupport()
-    }
-    
     func readBloodGlucoseSamples(from startDate: Date, to endDate: Date) async throws -> [HKQuantitySample] {
         try await verifyAuthorizationForReading()
         
@@ -128,16 +124,6 @@ class HealthKitManager: HealthKitManagerProtocol {
         }
     }
     
-    func deleteBloodGlucoseSample(_ sample: HKQuantitySample) async throws {
-        try await verifyAuthorizationForWriting()
-        
-        do {
-            try await healthStore.delete(sample)
-        } catch {
-            throw HealthKitError.dataSaveFailed("Failed to delete sample: \(error.localizedDescription)")
-        }
-    }
-    
     func getLatestBloodGlucoseReading() async throws -> HKQuantitySample? {
         try await verifyAuthorizationForReading()
         
@@ -164,7 +150,15 @@ class HealthKitManager: HealthKitManagerProtocol {
         }
     }
     
-    func saveBloodGlucoseSample(value: Double, unit: HKUnit, date: Date) async throws {
+    // 기존 메서드 (하위 호환성)
+    func saveBloodGlucoseSample(value: Double, date: Date) async throws {
+        let unit = bloodGlucoseUnit
+        let metadata: [String: Any] = [HKMetadataKeyWasUserEntered: true]
+        try await saveBloodGlucoseSample(value: value, unit: unit, date: date, metadata: metadata)
+    }
+    
+    // 새로운 metadata 지원 메서드
+    func saveBloodGlucoseSample(value: Double, unit: HKUnit, date: Date, metadata: [String: Any]) async throws {
         try await verifyAuthorizationForWriting()
         
         guard value > 0 else {
@@ -180,7 +174,8 @@ class HealthKitManager: HealthKitManagerProtocol {
             type: bloodGlucoseType,
             quantity: quantity,
             start: date,
-            end: date
+            end: date,
+            metadata: metadata
         )
         
         do {
@@ -188,6 +183,20 @@ class HealthKitManager: HealthKitManagerProtocol {
         } catch {
             throw HealthKitError.dataSaveFailed(error.localizedDescription)
         }
+    }
+    
+    func deleteBloodGlucoseSample(_ sample: HKQuantitySample) async throws {
+        try await verifyAuthorizationForWriting()
+        
+        do {
+            try await healthStore.delete(sample)
+        } catch {
+            throw HealthKitError.dataSaveFailed("Failed to delete sample: \(error.localizedDescription)")
+        }
+    }
+    
+    func isHealthKitAvailable() -> Bool {
+        return HKHealthStore.isHealthDataAvailable() && validateBloodGlucoseTypeSupport()
     }
     
     private func verifyAuthorizationForReading() async throws {

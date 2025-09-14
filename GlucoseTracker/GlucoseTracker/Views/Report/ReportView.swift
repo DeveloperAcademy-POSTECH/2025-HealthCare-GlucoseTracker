@@ -42,7 +42,7 @@ struct ReportView: View {
     
     private var mainContent: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            VStack(spacing: 8) {
                 if isLoading {
                     LoadingView()
                 } else {
@@ -62,16 +62,16 @@ struct ReportView: View {
             WeekRangeHeader(dateRange: analytics.dateRange)
             
             GlucoseReportCard(
-                title: "Fasting Glucose",
-                metrics: analytics.fasting,
-                chartData: analytics.fastingChartData,
+                title: "Preprandial Glucose",
+                metrics: analytics.preprandial,
+                chartData: analytics.preprandialChartData,
                 color: .blue
             )
             
             GlucoseReportCard(
-                title: "Post-meal Glucose",
-                metrics: analytics.postMeal,
-                chartData: analytics.postMealChartData,
+                title: "Postprandial Glucose",
+                metrics: analytics.postprandial,
+                chartData: analytics.postprandialChartData,
                 color: .orange
             )
         }
@@ -100,8 +100,6 @@ struct ReportView: View {
         }
     }
 }
-
-// MARK: - Week Range Header
 
 struct WeekRangeHeader: View {
     let dateRange: WeekDateRange
@@ -133,8 +131,6 @@ struct WeekRangeHeader: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
-
-// MARK: - Report Card Component
 
 struct GlucoseReportCard: View {
     let title: String
@@ -207,8 +203,6 @@ struct GlucoseReportCard: View {
     }
 }
 
-// MARK: - Percentage Change Indicator
-
 struct PercentageChangeIndicator: View {
     let change: Double
     
@@ -225,13 +219,11 @@ struct PercentageChangeIndicator: View {
     }
 }
 
-// MARK: - Data Models
-
 struct WeeklyAnalytics {
-    let fasting: WeeklyMetrics
-    let postMeal: WeeklyMetrics
-    let fastingChartData: [WeeklyDataPoint]
-    let postMealChartData: [WeeklyDataPoint]
+    let preprandial: WeeklyMetrics
+    let postprandial: WeeklyMetrics
+    let preprandialChartData: [WeeklyDataPoint]
+    let postprandialChartData: [WeeklyDataPoint]
     let dateRange: WeekDateRange
 }
 
@@ -270,7 +262,7 @@ struct WeeklyMetrics {
 }
 
 struct WeeklyDataPoint {
-    let weekday: Int // 1 = Sunday, 2 = Monday, ...
+    let weekday: Int
     let value: Double
     let hasData: Bool
     
@@ -280,11 +272,9 @@ struct WeeklyDataPoint {
     }
     
     var displayValue: Double {
-        hasData ? value : 0 // Minimum value for empty days
+        hasData ? value : 0
     }
 }
-
-// MARK: - Analytics Engine
 
 struct WeeklyGlucoseAnalyzer {
     static func analyze(_ readings: [BloodGlucoseReading]) -> WeeklyAnalytics {
@@ -307,31 +297,31 @@ struct WeeklyGlucoseAnalyzer {
         let currentWeekReadings = filterReadings(readings, in: currentWeek)
         let previousWeekReadings = filterReadings(readings, in: previousWeek)
         
-        let fastingMetrics = calculateMetrics(
-            current: filterFastingReadings(currentWeekReadings),
-            previous: filterFastingReadings(previousWeekReadings)
+        let preprandialMetrics = calculateMetrics(
+            current: filterPreprandialReadings(currentWeekReadings),
+            previous: filterPreprandialReadings(previousWeekReadings)
         )
         
-        let postMealMetrics = calculateMetrics(
-            current: filterPostMealReadings(currentWeekReadings),
-            previous: filterPostMealReadings(previousWeekReadings)
+        let postprandialMetrics = calculateMetrics(
+            current: filterPostprandialReadings(currentWeekReadings),
+            previous: filterPostprandialReadings(previousWeekReadings)
         )
         
-        let fastingChartData = generateChartData(
-            filterFastingReadings(currentWeekReadings),
+        let preprandialChartData = generateChartData(
+            filterPreprandialReadings(currentWeekReadings),
             weekInterval: currentWeek
         )
         
-        let postMealChartData = generateChartData(
-            filterPostMealReadings(currentWeekReadings),
+        let postprandialChartData = generateChartData(
+            filterPostprandialReadings(currentWeekReadings),
             weekInterval: currentWeek
         )
         
         return WeeklyAnalytics(
-            fasting: fastingMetrics,
-            postMeal: postMealMetrics,
-            fastingChartData: fastingChartData,
-            postMealChartData: postMealChartData,
+            preprandial: preprandialMetrics,
+            postprandial: postprandialMetrics,
+            preprandialChartData: preprandialChartData,
+            postprandialChartData: postprandialChartData,
             dateRange: dateRange
         )
     }
@@ -354,10 +344,10 @@ struct WeeklyGlucoseAnalyzer {
         )
         
         return WeeklyAnalytics(
-            fasting: emptyMetrics,
-            postMeal: emptyMetrics,
-            fastingChartData: emptyChartData,
-            postMealChartData: emptyChartData,
+            preprandial: emptyMetrics,
+            postprandial: emptyMetrics,
+            preprandialChartData: emptyChartData,
+            postprandialChartData: emptyChartData,
             dateRange: dateRange
         )
     }
@@ -372,17 +362,12 @@ struct WeeklyGlucoseAnalyzer {
         return readings.filter { interval.contains($0.date) }
     }
     
-    private static func filterFastingReadings(_ readings: [BloodGlucoseReading]) -> [BloodGlucoseReading] {
-        return readings.filter { isFastingTime($0.date) }
+    private static func filterPreprandialReadings(_ readings: [BloodGlucoseReading]) -> [BloodGlucoseReading] {
+        return readings.filter { $0.mealTime == .preprandial }
     }
     
-    private static func filterPostMealReadings(_ readings: [BloodGlucoseReading]) -> [BloodGlucoseReading] {
-        return readings.filter { !isFastingTime($0.date) }
-    }
-    
-    private static func isFastingTime(_ date: Date) -> Bool {
-        let hour = Calendar.current.component(.hour, from: date)
-        return hour >= 6 && hour <= 9
+    private static func filterPostprandialReadings(_ readings: [BloodGlucoseReading]) -> [BloodGlucoseReading] {
+        return readings.filter { $0.mealTime == .postprandial }
     }
     
     private static func calculateMetrics(current: [BloodGlucoseReading], previous: [BloodGlucoseReading]) -> WeeklyMetrics {

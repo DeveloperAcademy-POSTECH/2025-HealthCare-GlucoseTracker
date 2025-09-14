@@ -122,79 +122,7 @@ struct HealthKitAuthorizationView: View {
         }
     }
 }
-
-struct PermissionRequestView: View {
-    @EnvironmentObject private var authManager: HealthKitAuthorizationManager
     
-    var body: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "heart.circle")
-                .font(.system(size: 80))
-                .foregroundColor(.red)
-            
-            VStack(spacing: 16) {
-                Text("HealthKit Permission Required")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .multilineTextAlignment(.center)
-                
-                Text("This app needs access to HealthKit to read and write your blood glucose data securely.")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            
-            VStack(spacing: 12) {
-                Button("Grant Permission") {
-                    Task {
-                        await authManager.requestAuthorization()
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                
-                Text("Your health data will remain private and secure")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding()
-    }
-}
-
-struct PermissionDeniedView: View {
-    @EnvironmentObject private var authManager: HealthKitAuthorizationManager
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 80))
-                .foregroundColor(.orange)
-            
-            VStack(spacing: 16) {
-                Text("HealthKit Access Denied")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .multilineTextAlignment(.center)
-                
-                Text("To use this app, please enable HealthKit access in your device settings.")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            
-            VStack(spacing: 12) {
-                Button("Try Again") {
-                    authManager.checkAuthorizationStatus()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-            }
-        }
-        .padding()
-    }
-}
-
 struct HealthKitUnavailableView: View {
     var body: some View {
         VStack(spacing: 24) {

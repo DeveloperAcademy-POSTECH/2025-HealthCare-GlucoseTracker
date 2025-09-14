@@ -8,6 +8,5 @@
 import Foundation
 
 struct URLConstants {
-    // 임시
-    static let naverURL = URL(string: "https://www.naver.com/")!
+    static let privacyURL = URL(string: "https://glucosetracker.notion.site/Glucose-tracker-26234b48a89480afa374d78df3824ced")!
 }

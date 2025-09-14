@@ -8,8 +8,6 @@
 import SwiftUI
 import HealthKit
 
-// MARK: - History Calendar Data Source
-
 class HistoryCalendarDataSource: CalendarDataSource, ObservableObject {
     private var bloodGlucoseData: [BloodGlucoseReading] = []
     private let calendar = Calendar.current
@@ -24,8 +22,6 @@ class HistoryCalendarDataSource: CalendarDataSource, ObservableObject {
         }
     }
 }
-
-// MARK: - History View
 
 struct HistoryView: View {
     @StateObject private var authManager = HealthKitAuthorizationManager()
@@ -89,7 +85,6 @@ struct HistoryView: View {
                     selectedDate = date
                 }
             )
-            .padding()
 
             List {
                 Section(header: Text("Summary").font(.headline)) {
@@ -126,7 +121,7 @@ struct HistoryView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     
-                    Text(MealTimeType.from(reading: reading).displayName)
+                    Text(reading.mealTime.displayName)
                         .font(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
@@ -139,9 +134,9 @@ struct HistoryView: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(reading.formattedValue) mg/dL")
                         .font(.headline)
-                        .foregroundColor(MealTimeType.from(reading: reading).getGlucoseColor(for: reading.value))
+                        .foregroundColor(reading.mealTime.getGlucoseColor(for: reading.value))
                     
-                    let status = MealTimeType.from(reading: reading).getGlucoseStatus(for: reading.value)
+                    let status = reading.mealTime.getGlucoseStatus(for: reading.value)
                     HStack(spacing: 4) {
                         Image(systemName: status.systemImageName)
                             .font(.caption)
@@ -157,32 +152,30 @@ struct HistoryView: View {
     }
     
     private func summaryView() -> some View {
-        let fastingToday = getGlucoseAverage(for: .fasting, on: selectedDate)
-        let fastingYesterday = getGlucoseAverage(for: .fasting, on: Calendar.current.date(byAdding: .day, value: -1, to: selectedDate)!)
-        let fastingChange = calculatePercentageChange(today: fastingToday.rawValue, yesterday: fastingYesterday.rawValue)
+        let preprandialToday = getGlucoseAverage(for: .preprandial, on: selectedDate)
+        let preprandialYesterday = getGlucoseAverage(for: .preprandial, on: Calendar.current.date(byAdding: .day, value: -1, to: selectedDate)!)
+        let preprandialChange = calculatePercentageChange(today: preprandialToday.rawValue, yesterday: preprandialYesterday.rawValue)
 
-        let postMealToday = getGlucoseAverage(for: .postMeal, on: selectedDate)
-        let postMealYesterday = getGlucoseAverage(for: .postMeal, on: Calendar.current.date(byAdding: .day, value: -1, to: selectedDate)!)
-        let postMealChange = calculatePercentageChange(today: postMealToday.rawValue, yesterday: postMealYesterday.rawValue)
+        let postprandialToday = getGlucoseAverage(for: .postprandial, on: selectedDate)
+        let postprandialYesterday = getGlucoseAverage(for: .postprandial, on: Calendar.current.date(byAdding: .day, value: -1, to: selectedDate)!)
+        let postprandialChange = calculatePercentageChange(today: postprandialToday.rawValue, yesterday: postprandialYesterday.rawValue)
 
         return VStack(spacing: 16) {
             HStack(spacing: 20) {
                 summaryCardView(
-                    title: MealTimeType.fasting.displayName,
-                    value: fastingToday.value,
-                    change: fastingChange,
+                    title: "Preprandial",
+                    value: preprandialToday.value,
+                    change: preprandialChange,
                     color: .blue
                 )
                 
                 summaryCardView(
-                    title: MealTimeType.postMeal.displayName,
-                    value: postMealToday.value,
-                    change: postMealChange,
+                    title: "Postprandial",
+                    value: postprandialToday.value,
+                    change: postprandialChange,
                     color: .orange
                 )
             }
-            
-//            selectedDateView
         }
         .padding()
     }
@@ -208,37 +201,16 @@ struct HistoryView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
     
-    private var selectedDateView: some View {
-        HStack {
-            Image(systemName: "calendar")
-                .foregroundColor(.accentColor)
-            
-            Text(selectedDate.formatted(date: .complete, time: .omitted))
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            
-            Spacer()
-            
-            let recordCount = getFilteredRecords().count
-            Text("\(recordCount) record\(recordCount == 1 ? "" : "s")")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-    
     private func getFilteredRecords() -> [BloodGlucoseReading] {
         return bloodGlucoseData
             .filter { Calendar.current.isDate($0.date, inSameDayAs: selectedDate) }
             .sorted { $0.date > $1.date }
     }
     
-    private func getGlucoseAverage(for mealType: MealTimeType, on date: Date) -> (value: String, rawValue: Double) {
+    private func getGlucoseAverage(for mealType: HKBloodGlucoseMealTime, on date: Date) -> (value: String, rawValue: Double) {
         let records = bloodGlucoseData
             .filter { Calendar.current.isDate($0.date, inSameDayAs: date) }
-            .filter { MealTimeType.from(reading: $0) == mealType }
+            .filter { $0.mealTime == mealType }
             .map { $0.value }
 
         if records.isEmpty {
@@ -271,7 +243,6 @@ struct HistoryView: View {
         }
         
         do {
-            // Load data from the last 60 days for better performance
             let sixtyDaysAgo = Calendar.current.date(byAdding: .day, value: -60, to: Date()) ?? Date()
             let samples = try await healthKitManager.readBloodGlucoseSamples(since: sixtyDaysAgo)
             let readings = BloodGlucoseDataProcessor.processBloodGlucoseSamples(samples)

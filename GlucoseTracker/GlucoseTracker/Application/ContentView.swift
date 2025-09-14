@@ -27,12 +27,11 @@ struct ContentView: View {
                     Image(systemName: "chart.bar.fill")
                     Text("Report")
                 }
-            
-            TestView()
-                .tabItem {
-                    Image(systemName: "testtube.2")
-                    Text("Test")
-                }
+//            TestView()
+//                .tabItem {
+//                    Image(systemName: "testtube.2")
+//                    Text("Test")
+//                }
         }
         .accentColor(.accentColor)
     }
