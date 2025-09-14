@@ -15,7 +15,7 @@ struct HomeView: View {
     @State private var selectedDate = Date()
     @State private var selectedTime = Date()
     @State private var bloodGlucose: String = ""
-    @State private var mealTime: HKBloodGlucoseMealTime? = .preprandial  // HealthKit 표준 직접 사용
+    @State private var mealTime: HKBloodGlucoseMealTime? = .preprandial
     @State private var isSaving = false
     @State private var showSavedAlert = false
     @State private var errorMessage: String?
@@ -24,6 +24,9 @@ struct HomeView: View {
     
     // 개인정보 처리 방침
     @State private var showWebView = false
+    
+    // 시간대별 인사말
+    @State private var currentGreeting = TimeBasedGreeting.current()
     
     private let healthKitManager: HealthKitManagerProtocol
     
@@ -42,7 +45,7 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
+                VStack {
                     greetingCard
                     recordCard
                     
@@ -58,6 +61,7 @@ struct HomeView: View {
                     .padding(.horizontal)
                     .disabled(isSaving || !isValidInput)
                 }
+                .frame(width: .infinity)
                 .padding()
             }
             .toolbar {
@@ -68,6 +72,14 @@ struct HomeView: View {
                 }
             }
             .navigationTitle("Home")
+            .onAppear {
+                updateGreeting()
+                updateRecommendedMealTime()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                updateGreeting()
+                updateRecommendedMealTime()
+            }
         }
         .alert("Saved", isPresented: $showSavedAlert) {
             Button("OK", role: .cancel) {}
@@ -87,24 +99,25 @@ struct HomeView: View {
     
     private var greetingCard: some View {
         VStack(spacing: 12) {
-            Image(systemName: "heart.text.square")
-                .font(.system(size: 60))
-                .foregroundColor(.red)
+            Image(systemName: currentGreeting.icon)
+                .font(.system(size: 40))
+                .foregroundColor(currentGreeting.iconColor)
                 .padding(.bottom, 8)
             
-            Text("Good Morning!")
-                .font(.title2)
+            Text(currentGreeting.greeting)
+                .font(.title3)
                 .fontWeight(.bold)
             
-            Text("Let's record your blood glucose level")
+            Text(currentGreeting.title)
                 .font(.headline)
                 .multilineTextAlignment(.center)
             
-            Text("Remember to check your fasting blood sugar in the morning before eating or drinking anything.")
+            Text(currentGreeting.message)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
         }
+        .frame(maxWidth: .infinity)
         .padding()
         .background(Color(.systemGray6))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -207,6 +220,19 @@ struct HomeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
     
+    private func updateGreeting() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            currentGreeting = TimeBasedGreeting.current()
+        }
+    }
+    
+    private func updateRecommendedMealTime() {
+        let currentPeriod = TimePeriod.current()
+        if let recommendedMealTime = currentPeriod.recommendedMealTime {
+            mealTime = recommendedMealTime
+        }
+    }
+    
     private func saveRecordToHealth() async {
         guard let value = glucoseDouble, value > 0, value <= 500 else {
             showError("Please enter a valid blood glucose value (1-500 mg/dL)")
@@ -282,4 +308,3 @@ struct HomeView: View {
 #Preview {
     HomeView()
 }
-

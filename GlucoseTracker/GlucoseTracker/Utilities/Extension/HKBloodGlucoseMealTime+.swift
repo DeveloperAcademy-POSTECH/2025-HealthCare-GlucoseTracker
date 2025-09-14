@@ -9,8 +9,9 @@ import Foundation
 import HealthKit
 import SwiftUI
 
-extension HKBloodGlucoseMealTime: CaseIterable {
-    public static var allCases: [HKBloodGlucoseMealTime] {
+extension HKBloodGlucoseMealTime {
+    // CaseIterable conformance 제거하고 static 속성으로 제공
+    static var allMealTimes: [HKBloodGlucoseMealTime] {
         return [.preprandial, .postprandial]
     }
     
