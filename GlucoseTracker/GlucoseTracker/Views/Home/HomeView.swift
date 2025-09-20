@@ -24,6 +24,10 @@ struct HomeView: View {
     
     // 개인정보 처리 방침
     @State private var showWebView = false
+    // Support 링크 이동
+    @State private var showSupport = false
+    // Diabetes Association
+    @State private var showDiabetes = false
     
     // 시간대별 인사말
     @State private var currentGreeting = TimeBasedGreeting.current()
@@ -61,7 +65,6 @@ struct HomeView: View {
                     .padding(.horizontal)
                     .disabled(isSaving || !isValidInput)
                 }
-                .frame(width: .infinity)
                 .padding()
             }
             .toolbar {
@@ -70,6 +73,13 @@ struct HomeView: View {
                         Image(systemName: "doc.text")
                     }
                 }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showSupport = true }) {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
+                
             }
             .navigationTitle("Home")
             .onAppear {
@@ -93,6 +103,14 @@ struct HomeView: View {
         }
         .fullScreenCover(isPresented: $showWebView) {
             SafariView(url: URLConstants.privacyURL)
+                .ignoresSafeArea()
+        }
+        .fullScreenCover(isPresented: $showSupport) {
+            SafariView(url: URLConstants.supportURL)
+                .ignoresSafeArea()
+        }
+        .fullScreenCover(isPresented: $showDiabetes) {
+            SafariView(url: URLConstants.glucoseDiabetesURL)
                 .ignoresSafeArea()
         }
     }
@@ -211,8 +229,14 @@ struct HomeView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 
-                Text("(American Diabetes Association)")
-                    .font(.caption2)
+                Button {
+                    showDiabetes = true
+                } label: {
+                    Text("(American Diabetes Association)")
+                        .font(.caption)
+                        .bold()
+                        .underline(true, color: .blue)
+                }
             }
         }
         .padding()
