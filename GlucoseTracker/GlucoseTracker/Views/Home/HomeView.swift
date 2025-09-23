@@ -67,20 +67,11 @@ struct HomeView: View {
                 }
                 .padding()
             }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showWebView = true }) {
-                        Image(systemName: "doc.text")
-                    }
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showSupport = true }) {
-                        Image(systemName: "questionmark.circle")
-                    }
-                }
-                
+            .onTapGesture {
+                bgFieldFocused = false
             }
+            .scrollDismissesKeyboard(.interactively)
+            
             .navigationTitle("Home")
             .onAppear {
                 updateGreeting()
@@ -177,20 +168,15 @@ struct HomeView: View {
                     Spacer()
                     
                     TextField("Enter value", text: $bloodGlucose)
-                        .keyboardType(.decimalPad)
+                        .keyboardType(.numberPad)
                         .focused($bgFieldFocused)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 100)
                         .textFieldStyle(.roundedBorder)
                         .onChange(of: bloodGlucose) { _, newValue in
-                            let filtered = newValue.filter { $0.isNumber || $0 == "." }
-                            let components = filtered.components(separatedBy: ".")
-                            
-                            if components.count > 2 {
-                                bloodGlucose = components.prefix(2).joined(separator: ".")
-                            } else {
-                                bloodGlucose = filtered
-                            }
+                            // 숫자만 허용
+                            let filtered = newValue.filter { $0.isNumber }
+                            bloodGlucose = filtered
                         }
                     
                     Text("mg/dL")
@@ -242,6 +228,44 @@ struct HomeView: View {
         .padding()
         .background(Color(.systemGray6))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: { showWebView = true }) {
+                    Image(systemName: "doc.text")
+                }
+            }
+            
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: { showSupport = true }) {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+            
+            ToolbarItem(placement: .keyboard) {
+                HStack {
+                    Button("Cancel") {
+                        bloodGlucose = ""
+                        bgFieldFocused = false
+                    }
+                    .foregroundColor(.red)
+                    
+                    Spacer()
+                    
+                    if !bloodGlucose.isEmpty {
+                        Text("\(bloodGlucose) mg/dL")
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Button("Done") {
+                        bgFieldFocused = false
+                    }
+                    .fontWeight(.semibold)
+                    .foregroundColor(.blue)
+                }
+            }
+        }
     }
     
     private func updateGreeting() {
