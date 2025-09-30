@@ -85,14 +85,14 @@ struct HistoryView: View {
                     selectedDate = date
                 }
             )
-
+            
             List {
                 Section(header: Text("Summary").font(.headline)) {
                     summaryView()
                 }
-
+                
                 let filteredRecords = getFilteredRecords()
-
+                
                 if filteredRecords.isEmpty {
                     HStack {
                         Spacer()
@@ -155,11 +155,11 @@ struct HistoryView: View {
         let preprandialToday = getGlucoseAverage(for: .preprandial, on: selectedDate)
         let preprandialYesterday = getGlucoseAverage(for: .preprandial, on: Calendar.current.date(byAdding: .day, value: -1, to: selectedDate)!)
         let preprandialChange = calculatePercentageChange(today: preprandialToday.rawValue, yesterday: preprandialYesterday.rawValue)
-
+        
         let postprandialToday = getGlucoseAverage(for: .postprandial, on: selectedDate)
         let postprandialYesterday = getGlucoseAverage(for: .postprandial, on: Calendar.current.date(byAdding: .day, value: -1, to: selectedDate)!)
         let postprandialChange = calculatePercentageChange(today: postprandialToday.rawValue, yesterday: postprandialYesterday.rawValue)
-
+        
         return VStack(spacing: 16) {
             HStack(spacing: 20) {
                 summaryCardView(
@@ -212,7 +212,7 @@ struct HistoryView: View {
             .filter { Calendar.current.isDate($0.date, inSameDayAs: date) }
             .filter { $0.mealTime == mealType }
             .map { $0.value }
-
+        
         if records.isEmpty {
             return ("No data", 0)
         } else {
@@ -223,10 +223,10 @@ struct HistoryView: View {
     
     private func calculatePercentageChange(today: Double, yesterday: Double) -> (text: String, color: Color) {
         guard yesterday > 0 else { return ("No comparison", .gray) }
-
+        
         let change = ((today - yesterday) / yesterday) * 100
         let roundedChange = round(change * 10) / 10
-
+        
         if change > 0 {
             return ("↑ \(roundedChange)%", .orange)
         } else if change < 0 {
